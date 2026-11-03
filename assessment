@@ -1,0 +1,332 @@
+
+import json
+from pathlib import Path
+
+DATA_FILE = Path(__file__).with_name("artefacts.json")
+
+VALID_CONDITIONS = {
+    "good": "Good",
+    "damage": "Damaged",
+    "damaged": "Damaged",
+    "under repair": "Under repair"
+}
+
+
+def load_artefacts(file_path=DATA_FILE):
+    """Load existing artefacts from the JSON file."""
+    try:
+        with open(file_path, "r", encoding="utf-8") as file:
+            records = json.load(file)
+
+        if not isinstance(records, list):
+            raise ValueError("Invalid data format.")
+
+        required = {
+            "id", "name", "category",
+            "location", "condition", "notes"
+        }
+
+        for record in records:
+            if not isinstance(record, dict):
+                raise ValueError("Invalid artefact record.")
+            if not required.issubset(record):
+                raise ValueError("Missing record information.")
+
+        return records
+
+    except FileNotFoundError:
+        return []
+
+    except (json.JSONDecodeError, ValueError) as error:
+        print(f"Warning: Could not read saved data: {error}")
+        return []
+
+
+def save_artefacts(artefacts, file_path=DATA_FILE):
+    """Save artefact records to a JSON file."""
+    try:
+        with open(file_path, "w", encoding="utf-8") as file:
+            json.dump(
+                artefacts,
+                file,
+                indent=4,
+                ensure_ascii=False
+            )
+        return True
+
+    except OSError as error:
+        print(f"Error saving records: {error}")
+        return False
+
+
+def next_artefact_id(artefacts):
+    """Generate the next available artefact ID."""
+    return max(
+        (item["id"] for item in artefacts),
+        default=0
+    ) + 1
+
+
+def add_artefact(
+    artefacts, name, category, location,
+    condition="Good", notes=""
+):
+    """Validate and add a new artefact."""
+
+    name = name.strip()
+    category = category.strip()
+    location = location.strip()
+    notes = notes.strip()
+
+    if not name:
+        raise ValueError("Artefact name cannot be empty.")
+
+    if not category:
+        raise ValueError("Category cannot be empty.")
+
+    if not location:
+        raise ValueError("Location cannot be empty.")
+
+    # Prevent duplicate names.
+    if any(
+        item["name"].casefold() == name.casefold()
+        for item in artefacts
+    ):
+        raise ValueError("This artefact already exists.")
+
+    condition_key = condition.strip().casefold()
+
+    if condition_key not in VALID_CONDITIONS:
+        raise ValueError(
+            "Condition must be Good, Damaged or Under repair."
+        )
+
+    # Create the artefact dictionary.
+    record = {
+        "id": next_artefact_id(artefacts),
+        "name": name,
+        "category": category.title(),
+        "location": location,
+        "condition": VALID_CONDITIONS[condition_key],
+        "notes": notes
+    }
+
+    artefacts.append(record)
+    return record
+
+
+def update_condition(artefacts, artefact_id, new_condition):
+    """Update the condition of an existing artefact."""
+
+    condition_key = new_condition.strip().casefold()
+
+    if condition_key not in VALID_CONDITIONS:
+        raise ValueError(
+            "Condition must be Good, Damaged or Under repair."
+        )
+
+    for item in artefacts:
+        if item["id"] == artefact_id:
+            item["condition"] = VALID_CONDITIONS[condition_key]
+            return item
+
+    raise ValueError(
+        f"No artefact found with ID {artefact_id}."
+    )
+
+
+def search_artefacts(artefacts, search_term):
+    """Search artefacts using part or all of the name."""
+
+    term = search_term.strip().casefold()
+
+    if not term:
+        return []
+
+    return [
+        item for item in artefacts
+        if term in item["name"].casefold()
+    ]
+
+
+def display_artefacts(records):
+    """Display artefact information."""
+
+    if not records:
+        print("No artefacts found.")
+        return
+
+    print("-" * 60)
+
+    for item in records:
+        print(f"ID: {item['id']} | Name: {item['name']}")
+        print(
+            f"Category: {item['category']} | "
+            f"Location: {item['location']}"
+        )
+        print(f"Condition: {item['condition']}")
+
+        if item["notes"]:
+            print(f"Notes: {item['notes']}")
+
+        print("-" * 60)
+
+
+def prompt_non_empty(prompt):
+    """Repeat until the user enters a non-empty value."""
+
+    while True:
+        value = input(prompt).strip()
+
+        if value:
+            return value
+
+        print("This field cannot be blank. Try again.")
+
+
+def add_artefact_menu(artefacts):
+    """Collect information and add a new artefact."""
+
+    print("\n--- Add a New Artefact ---")
+
+    name = prompt_non_empty("Artefact name: ")
+
+    category = prompt_non_empty(
+        "Category (photograph/document/object): "
+    )
+
+    location = prompt_non_empty(
+        "Display or archive location: "
+    )
+
+    condition = input(
+        "Condition (Good/Damaged/Under repair) [Good]: "
+    ).strip() or "Good"
+
+    notes = input("Additional notes (optional): ").strip()
+
+    try:
+        record = add_artefact(
+            artefacts, name, category,
+            location, condition, notes
+        )
+
+        print(
+            "Artefact added successfully. "
+            f"Reference ID: {record['id']}"
+        )
+
+    except ValueError as error:
+        print(f"Unable to add artefact: {error}")
+
+
+def update_condition_menu(artefacts):
+    """Allow users to update an artefact condition."""
+
+    print("\n--- Update Artefact Condition ---")
+
+    if not artefacts:
+        print("There are no artefacts to update.")
+        return
+
+    display_artefacts(artefacts)
+
+    try:
+        artefact_id = int(
+            input("Enter artefact ID: ").strip()
+        )
+
+        condition = prompt_non_empty(
+            "New condition (Good/Damaged/Under repair): "
+        )
+
+        record = update_condition(
+            artefacts, artefact_id, condition
+        )
+
+        print(
+            f"Condition updated for '{record['name']}'."
+        )
+
+    except ValueError as error:
+        print(f"Unable to update condition: {error}")
+
+
+def search_menu(artefacts):
+    """Search for artefacts by name."""
+
+    term = input(
+        "Enter all or part of the artefact name: "
+    ).strip()
+
+    if not term:
+        print("Search term cannot be blank.")
+        return
+
+    results = search_artefacts(artefacts, term)
+    display_artefacts(results)
+
+
+def display_menu():
+    """Display the main application menu."""
+
+    print("\n========== LHC ARTEFACT MANAGEMENT SYSTEM ==========")
+    print("1. Add a new artefact")
+    print("2. Update artefact condition")
+    print("3. View all artefact details")
+    print("4. Search for an artefact by name")
+    print("5. Exit")
+    print("====================================================")
+
+
+def main():
+    """Main function controlling the application."""
+
+    artefacts = load_artefacts()
+
+    print(
+        "Welcome to the Local Heritage Community "
+        "Artefact Management System."
+    )
+
+    while True:
+
+        display_menu()
+
+        choice = input("Select an option (1-5): ").strip()
+
+        if choice == "1":
+
+            add_artefact_menu(artefacts)
+            save_artefacts(artefacts)
+
+        elif choice == "2":
+
+            update_condition_menu(artefacts)
+            save_artefacts(artefacts)
+
+        elif choice == "3":
+
+            display_artefacts(artefacts)
+
+        elif choice == "4":
+
+            search_menu(artefacts)
+
+        elif choice == "5":
+
+            save_artefacts(artefacts)
+            print("Thank you. The system has closed.")
+            break
+
+        else:
+
+            print(
+                "Invalid menu choice. "
+                "Please enter a number from 1 to 5."
+            )
+
+
+# Start the application.
+if __name__ == "__main__":
+    main()
